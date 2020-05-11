@@ -54,27 +54,28 @@
 
 #include <PID_v1.h>
 
-#define BLOWERSPD_PIN 6
-#define DPSENSOR_PIN A5
-#define SOLENOIDCTLPIN 7
-#define INH_FLOWSENSOR_PIN A6
-#define EXH_FLOWSENSOR_PIN A7
+//PCB Rev 1.0 Pin assignments
+#define PIN_PRES PA1
+#define PIN_INH PA4
+#define PIN_EXH PB0
+#define PIN_VSENSE PA0
+#define PIN_BUZZER PB4
+#define PIN_BLOWER PB3
+#define PIN_SOLENOID PA11
+#define PIN_HEATER PA8
+#define PIN_LED_R PC13
+#define PIN_LED_Y PC14
+#define PIN_LED_G PC15
+
+
 #define BLOWER_HIGH 101
 #define BLOWER_LOW 66
 
 //state machine variables
 #define INSPIRE_TIME 500
-#define INSPIRE_RATE 1
-#define PIP 151 // = 1.5kpa - 20cmH2O
-//#define PIP 116
-#define INSPIRE_DWELL 500
-#define INSPIRE_DWELL_PRESSURE 145
-//#define INSPIRE_DWELL_PRESSURE 106
-#define EXPIRE_TIME 1500
-#define EXPIRE_RATE 1
-#define PEEP 76 // = 0.5kpa = 5cmH2O
-//#define PEEP 61
-#define EXPIRE_DWELL 1500
+#define PIP 303 // = 20cmH2O (10bit scaling)
+#define EXPIRE_TIME 750
+#define PEEP 200 // = 5cmH2O (10bit scaling)
 //not implemented yet
 #define AC 0
 #define RR 0
@@ -85,7 +86,9 @@
 double Setpoint, Input, Output;
 
 //Specify the links and initial tuning parameters
-double Kp = 2, Ki = 1, Kd = 0;
+double ku = 0.7;
+double tu = 0.16;
+double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // These constants won't change. They're used to give names to the pins used:
@@ -95,6 +98,7 @@ int sensorValue = 0;        // value read from the pot
 int outputValue = 0;        // value output to the PWM (analog out)
 int flowValueINH = 0;
 int flowValueEXH = 0;
+int vsense = 0;
 
 unsigned int cyclecounter = 0;
 unsigned int state = 0;
@@ -108,69 +112,45 @@ void setup() {
   // initialize serial communications at 9600 bps:
   Serial.begin(115200);
 
+  pinMode(LED_BUILTIN,OUTPUT);
+  pinMode(PIN_LED_R,OUTPUT);
+  pinMode(PIN_LED_Y,OUTPUT);
+  pinMode(PIN_LED_G,OUTPUT);
+  pinMode(PIN_BUZZER,OUTPUT);
+  pinMode(PIN_BLOWER,OUTPUT);
+  pinMode(PIN_SOLENOID,OUTPUT);
+  pinMode(PIN_HEATER,OUTPUT);
+
   //Initialize PID
-  Input = map(analogRead(DPSENSOR_PIN), 0, 1023, 0, 255);
-  Setpoint = BLOWER_LOW;
+  Input = analogRead(PIN_PRES);
+  Setpoint = PEEP;
   //turn the PID on
   myPID.SetMode(AUTOMATIC);
-  pinMode(SOLENOIDCTLPIN, OUTPUT);
+  pinMode(PIN_SOLENOID, OUTPUT); 
 }
 
 void loop() {
 
   switch(state) {
-    case 0: //reset
-      cyclecounter = 0;
-      Setpoint = PEEP;
-      state = 1; //update state
-      digitalWrite(SOLENOIDCTLPIN,1);
-      break;
-
-    case 1: //Inspire
+    case 0:
       cyclecounter++;
       //set command
-      Setpoint += INSPIRE_RATE;
-      if (Setpoint > PIP) { Setpoint = PIP; }
-      digitalWrite(SOLENOIDCTLPIN,1);
+      Setpoint = PIP;
+      digitalWrite(PIN_SOLENOID,1);
       //update state
       if (cyclecounter > INSPIRE_TIME) {
         cyclecounter = 0;
-        state = 2;
+        state = 1;
       }
       break;
-
-    case 2: //Inspiratory plateau
-      cyclecounter++;
-      //set command
-      Setpoint = INSPIRE_DWELL_PRESSURE;
-      digitalWrite(SOLENOIDCTLPIN,1);
-      //update state
-      if (cyclecounter > INSPIRE_DWELL) {
-        cyclecounter = 0;
-        state = 3;
-      }
-      break;
-
-    case 3: //Expire
-      cyclecounter++;
-      //set command
-      Setpoint -= EXPIRE_RATE;
-      if (Setpoint < PEEP) { Setpoint = PEEP; }
-      digitalWrite(SOLENOIDCTLPIN,0);
-      //update state
-      if (cyclecounter > EXPIRE_TIME) {
-        cyclecounter = 0;
-        state = 4;
-      }
-      break;
-
-    case 4: //Expiratory Dwell
+            
+    case 1:
       cyclecounter++;
       //set command
       Setpoint = PEEP;
-      digitalWrite(SOLENOIDCTLPIN,0);
+      digitalWrite(PIN_SOLENOID,1);
       //update state
-      if (cyclecounter > EXPIRE_DWELL) {
+      if (cyclecounter > EXPIRE_TIME) {
         cyclecounter = 0;
         state = 0;
       }
@@ -182,25 +162,37 @@ void loop() {
   }
 
   //Update PID Loop
-  sensorValue = analogRead(DPSENSOR_PIN); //read sensor
-  flowValueINH = analogRead(INH_FLOWSENSOR_PIN);
-  flowValueEXH = analogRead(EXH_FLOWSENSOR_PIN);
+  sensorValue = analogRead(PIN_PRES); //read sensor
+  flowValueINH = analogRead(PIN_INH);
+  flowValueEXH = analogRead(PIN_EXH);
+  vsense = analogRead(PIN_VSENSE);
  
-  Input = map(sensorValue, 0, 1023, 0, 255); //map to output scale
+  Input = sensorValue;
   myPID.Compute(); // computer PID command
-  analogWrite(BLOWERSPD_PIN, Output); //write output
+  analogWrite(PIN_BLOWER, Output); //write output
   now = (unsigned int)millis();
-  Serial.print("C"); //output to monitor
-  Serial.write(now>>8);
-  Serial.write(now&0xff);
-  Serial.write(int(map(Setpoint,0,255,0,1023))>>8); //output to monitor
-  Serial.write(int(map(Setpoint,0,255,0,1023))&0xff); //output to monitor
-  Serial.write(int(sensorValue)>>8); //output to monitor
-  Serial.write(int(sensorValue)&0xff); //output to monitor
-  Serial.write(int(flowValueINH)>>8); //output to monitor
-  Serial.write(int(flowValueINH)&0xff); //output to monitor
-  Serial.write(int(flowValueEXH)>>8); //output to monitor
-  Serial.write(int(flowValueEXH)&0xff); //output to monitor
+  //Serial.print("C"); //output to monitor
+  //Serial.write(now>>8);
+  //Serial.write(now&0xff);
+  //Serial.write(int(map(Setpoint,0,255,0,1023))>>8); //output to monitor
+  //Serial.write(int(map(Setpoint,0,255,0,1023))&0xff); //output to monitor
+  //Serial.write(int(sensorValue)>>8); //output to monitor
+  //Serial.write(int(sensorValue)&0xff); //output to monitor
+  //Serial.write(int(flowValueINH)>>8); //output to monitor
+  //Serial.write(int(flowValueINH)&0xff); //output to monitor
+  //Serial.write(int(flowValueEXH)>>8); //output to monitor
+  //Serial.write(int(flowValueEXH)&0xff); //output to monitor
+  Serial.print(Setpoint);
+  Serial.print("\t");
+  Serial.print(Output);
+  Serial.print("\t");
+  Serial.print(sensorValue);
+  Serial.print("\t");
+  Serial.print(flowValueINH);
+  Serial.print("\t");
+  Serial.print(flowValueEXH);
+  Serial.print("\t");
+  Serial.println(vsense);
   delay(2);  //delay
 
 }
