@@ -55,17 +55,17 @@
 #include <PID_v1.h>
 
 //PCB Rev 1.0 Pin assignments
-#define PIN_PRES PA1
-#define PIN_INH PA4
-#define PIN_EXH PB0
-#define PIN_VSENSE PA0
-#define PIN_BUZZER PB4
-#define PIN_BLOWER PB3
-#define PIN_SOLENOID PA11
-#define PIN_HEATER PA8
-#define PIN_LED_R PC13
-#define PIN_LED_Y PC14
-#define PIN_LED_G PC15
+#define PIN_PRES PA1 //patient pressure sensor
+#define PIN_INH PA4 //inhalation venturi dP sensor
+#define PIN_EXH PB0 //exhalation ventiri dP sensor
+#define PIN_VSENSE PA0 //input voltage resistor divider
+#define PIN_BUZZER PB4 //buzzer driver pin
+#define PIN_BLOWER PB3 //blower command pin
+#define PIN_SOLENOID PA11 //solenoid switch control pin
+#define PIN_HEATER PA8 //heater switch control pin
+#define PIN_LED_R PC13 //RED alarm led control pin
+#define PIN_LED_Y PC14 //YELLOW alarm led control pin (does not work in Rev 1.0 PCB due to pin conflict with oscillator)
+#define PIN_LED_G PC15 //GREEN alarm led control pin (does not work in Rev 1.0 PCB due to pin conflict with oscillator)
 
 
 #define BLOWER_HIGH 101
@@ -73,9 +73,9 @@
 
 //state machine variables
 #define INSPIRE_TIME 500
-#define PIP 303 // = 20cmH2O (10bit scaling)
+#define PIP 303 //  (10bit scaling)
 #define EXPIRE_TIME 750
-#define PEEP 200 // = 5cmH2O (10bit scaling)
+#define PEEP 200 // (10bit scaling)
 //not implemented yet
 #define AC 0
 #define RR 0
@@ -86,32 +86,29 @@
 double Setpoint, Input, Output;
 
 //Specify the links and initial tuning parameters
-double ku = 0.7;
-double tu = 0.16;
-double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0;
+double ku = 0.7;  //maximum P gain in P-only mode that generates a stable oscillation
+double tu = 0.16; //oscillation period of the above
+double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0; //calculates gains using ziegler-nichols method of PI control
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // These constants won't change. They're used to give names to the pins used:
 const int analogOutPin = LED_BUILTIN; // Analog output pin that the LED is attached to
 
-int sensorValue = 0;        // value read from the pot
+int sensorValue = 0;        // value read from pressure sensor
 int outputValue = 0;        // value output to the PWM (analog out)
-int flowValueINH = 0;
-int flowValueEXH = 0;
+int flowValueINH = 0;       // value read from inhale flow sensor
+int flowValueEXH = 0;       // value read from exhale flow sensor
 int vsense = 0;
 
-unsigned int cyclecounter = 0;
-unsigned int state = 0;
-unsigned int now = 0;
-volatile unsigned long paddlePeriod = 0;
-volatile unsigned long paddlePrev = 0;
-volatile unsigned long paddlePeriod2 = 0;
-volatile unsigned long paddlePrev2 = 0;
+unsigned int cyclecounter = 0; //used to time the cycles in the state machine
+unsigned int state = 0; //state machine state
+unsigned int now = 0; // carry the time
 
 void setup() {
-  // initialize serial communications at 9600 bps:
+  // initialize serial communications at 115200 bps:
   Serial.begin(115200);
 
+  //set pin modes
   pinMode(LED_BUILTIN,OUTPUT);
   pinMode(PIN_LED_R,OUTPUT);
   pinMode(PIN_LED_Y,OUTPUT);
@@ -131,12 +128,15 @@ void setup() {
 
 void loop() {
 
+  //respiration cycle state machine
+  //times states and sets setpoint
   switch(state) {
     case 0:
       cyclecounter++;
       //set command
       Setpoint = PIP;
       digitalWrite(PIN_SOLENOID,1);
+      analogWrite(PIN_BUZZER, 10);
       //update state
       if (cyclecounter > INSPIRE_TIME) {
         cyclecounter = 0;
@@ -149,6 +149,7 @@ void loop() {
       //set command
       Setpoint = PEEP;
       digitalWrite(PIN_SOLENOID,1);
+      analogWrite(PIN_BUZZER, 0);
       //update state
       if (cyclecounter > EXPIRE_TIME) {
         cyclecounter = 0;
@@ -161,16 +162,19 @@ void loop() {
       break;
   }
 
-  //Update PID Loop
+  //CYCLE ACTION BLOCK
+  //read sensors
   sensorValue = analogRead(PIN_PRES); //read sensor
   flowValueINH = analogRead(PIN_INH);
   flowValueEXH = analogRead(PIN_EXH);
   vsense = analogRead(PIN_VSENSE);
- 
+
+  //Update PID Loop
   Input = sensorValue;
-  myPID.Compute(); // computer PID command
-  analogWrite(PIN_BLOWER, Output); //write output
+  myPID.Compute(); // compute PID command
+  analogWrite(PIN_BLOWER, Output); //write output to blower
   now = (unsigned int)millis();
+  //Output serial data in Cypress Bridge Control Panel format
   //Serial.print("C"); //output to monitor
   //Serial.write(now>>8);
   //Serial.write(now&0xff);
@@ -182,6 +186,8 @@ void loop() {
   //Serial.write(int(flowValueINH)&0xff); //output to monitor
   //Serial.write(int(flowValueEXH)>>8); //output to monitor
   //Serial.write(int(flowValueEXH)&0xff); //output to monitor
+
+  //Output serial data in Arduino Plotter format
   Serial.print(Setpoint);
   Serial.print("\t");
   Serial.print(Output);
