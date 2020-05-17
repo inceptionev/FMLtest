@@ -79,33 +79,36 @@
 
 //Pinch valve motion settings
 #define STARTSTROKE 7000
-#define OPENPOS 200
-#define CLOSEDPOS 6200
+#define OPENPOS 1000
+#define CLOSEDPOS 6750 //stop is a 6900
 
 #define BLOWER_HIGH 101
 #define BLOWER_LOW 66
 
 //state machine variables
-#define INSPIRE_TIME 500
-#define PIP 303 //  (10bit scaling)
-#define EXPIRE_TIME 750
-#define PEEP 200 // (10bit scaling)
+#define INSPIRE_TIME 400
+#define PIP 350 //  (10bit scaling)
+#define EXPIRE_TIME 400
+#define PEEP 245 // (10bit scaling)
 //not implemented yet
 #define AC 0
 #define RR 0
 #define IE 0
 
 //experimental: blower feed forward
-#define BLOWER_PIP 255 //blower speed at PIP
-#define BLOWER_PEEP 255 //blower speed at PEEP
+#define BLOWER_PIP 220 //blower speed at PIP
+#define BLOWER_PEEP 220 //blower speed at PEEP
 
 //Define Variables we'll be connecting to
 double Setpoint, Input, Output;
 
 //Specify the links and initial tuning parameters
-double ku = 0.7;  //maximum P gain in P-only mode that generates a stable oscillation
-double tu = 0.16; //oscillation period of the above
-double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0; //calculates gains using ziegler-nichols method of PI control
+double ku = 0.8;  //maximum P gain in P-only mode that generates a stable oscillation
+double tu = 0.186; //oscillation period of the above
+//double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0; //calculates gains using ziegler-nichols method of PI control
+//double Kp = ku/5, Ki = 2*ku/tu/5, Kd = ku*tu/15; //no overshoot rule
+double Kp=0.13, Ki=0.7, Kd=0; //base values - this kinda worked slow but stable
+//double Kp=0.8, Ki=0, Kd=0;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // These constants won't change. They're used to give names to the pins used:
@@ -124,8 +127,16 @@ unsigned int now = 0; // carry the time
 //instantiate stepper driver
 powerSTEP driver(0, nCS_PIN, nSTBY_nRESET_PIN);
 
+//i2c test device definitions
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);  //instantiate display
+
 void setup() {
   // initialize serial communications at 115200 bps:
+  analogWrite(PIN_BLOWER, 0);  //Blower off until cycle starts.
   Serial.begin(115200);
 
   //set pin modes
@@ -217,6 +228,17 @@ void setup() {
   while(driver.busyCheck()); // wait fo the move to finish
   driver.resetPos(); //establish home
 
+  //Setup display (i2c test)
+  Wire.begin();
+  Wire.beginTransmission(0x70); //address the i2c switch
+  Wire.write(7); //select i2c port, base address 4, cycle thru 5-7
+  Wire.endTransmission(); //send and stop
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.setTextSize(2);      // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(0, 0);     // Start at top-left corner
+  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
   //Initialize PID
   Input = analogRead(PIN_PRES);
   Setpoint = PEEP;
@@ -231,13 +253,14 @@ void loop() {
   //times states and sets setpoint
   switch(state) {
     case 0:
-      cyclecounter++;
       //set command
       Setpoint = PIP;
       analogWrite(PIN_BLOWER, BLOWER_PIP); //write output to blower
       digitalWrite(PIN_SOLENOID,1);
       analogWrite(PIN_BUZZER, 10);
+      //display once at the start of the cycle
       //update state
+      cyclecounter++;
       if (cyclecounter > INSPIRE_TIME) {
         cyclecounter = 0;
         state = 1;
@@ -245,13 +268,14 @@ void loop() {
       break;
             
     case 1:
-      cyclecounter++;
       //set command
       Setpoint = PEEP;
       analogWrite(PIN_BLOWER, BLOWER_PEEP); //write output to blower
       digitalWrite(PIN_SOLENOID,1);
       analogWrite(PIN_BUZZER, 0);
+      //display once at the start of the cycle
       //update state
+      cyclecounter++;
       if (cyclecounter > EXPIRE_TIME) {
         cyclecounter = 0;
         state = 0;
@@ -276,20 +300,22 @@ void loop() {
   driver.goTo(map(Output,0,255,CLOSEDPOS,OPENPOS));
   now = (unsigned int)millis();
   //Output serial data in Cypress Bridge Control Panel format
-  //Serial.print("C"); //output to monitor
-  //Serial.write(now>>8);
-  //Serial.write(now&0xff);
-  //Serial.write(int(Setpoint)>>8); //output to monitor
-  //Serial.write(int(Setpoint)&0xff); //output to monitor
-  //Serial.write(int(sensorValue)>>8); //output to monitor
-  //Serial.write(int(sensorValue)&0xff); //output to monitor
-  //Serial.write(int(flowValueINH)>>8); //output to monitor
-  //Serial.write(int(flowValueINH)&0xff); //output to monitor
-  //Serial.write(int(flowValueEXH)>>8); //output to monitor
-  //Serial.write(int(flowValueEXH)&0xff); //output to monitor
+  Serial.print("C"); //output to monitor
+  Serial.write(now>>8);
+  Serial.write(now&0xff);
+  Serial.write(int(Setpoint)>>8); //output to monitor
+  Serial.write(int(Setpoint)&0xff); //output to monitor
+  Serial.write(int(Output)>>8);
+  Serial.write(int(Output)&0xff);
+  Serial.write(int(sensorValue)>>8); //output to monitor
+  Serial.write(int(sensorValue)&0xff); //output to monitor
+  Serial.write(int(flowValueINH)>>8); //output to monitor
+  Serial.write(int(flowValueINH)&0xff); //output to monitor
+  Serial.write(int(flowValueEXH)>>8); //output to monitor
+  Serial.write(int(flowValueEXH)&0xff); //output to monitor
 
   //Output serial data in Arduino Plotter format
-  Serial.print(Setpoint);
+  /*Serial.print(Setpoint);
   Serial.print("\t");
   Serial.print(Output);
   Serial.print("\t");
@@ -300,6 +326,7 @@ void loop() {
   Serial.print(flowValueEXH);
   Serial.print("\t");
   Serial.println(vsense);
-  delay(2);  //delay
+  */
+  delay(10);  //delay
 
 }
