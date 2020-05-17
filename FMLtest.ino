@@ -1,4 +1,9 @@
 #include <PID_v1.h>
+#include <powerSTEP01ArduinoLibrary.h>
+#include <SPI.h>
+#include <Adafruit_GFX.h> //for OLED display
+#include <Adafruit_SSD1306.h> //for OLED display
+#include <Wire.h> //for OLED display
 
 /* Copyright 2020, Edwin Chiu
 
@@ -66,7 +71,16 @@
 #define PIN_LED_R PC13 //RED alarm led control pin
 #define PIN_LED_Y PC14 //YELLOW alarm led control pin (does not work in Rev 1.0 PCB due to pin conflict with oscillator)
 #define PIN_LED_G PC15 //GREEN alarm led control pin (does not work in Rev 1.0 PCB due to pin conflict with oscillator)
+// Pin definitions for the X-NUCLEO-IHM03A1 (stepper driver)
+#define nCS_PIN PB6
+#define STCK_PIN PC7
+#define nSTBY_nRESET_PIN PA9
+#define nBUSY_PIN PB5
 
+//Pinch valve motion settings
+#define STARTSTROKE 7000
+#define OPENPOS 200
+#define CLOSEDPOS 6200
 
 #define BLOWER_HIGH 101
 #define BLOWER_LOW 66
@@ -81,6 +95,9 @@
 #define RR 0
 #define IE 0
 
+//experimental: blower feed forward
+#define BLOWER_PIP 255 //blower speed at PIP
+#define BLOWER_PEEP 255 //blower speed at PEEP
 
 //Define Variables we'll be connecting to
 double Setpoint, Input, Output;
@@ -104,6 +121,9 @@ unsigned int cyclecounter = 0; //used to time the cycles in the state machine
 unsigned int state = 0; //state machine state
 unsigned int now = 0; // carry the time
 
+//instantiate stepper driver
+powerSTEP driver(0, nCS_PIN, nSTBY_nRESET_PIN);
+
 void setup() {
   // initialize serial communications at 115200 bps:
   Serial.begin(115200);
@@ -117,13 +137,92 @@ void setup() {
   pinMode(PIN_BLOWER,OUTPUT);
   pinMode(PIN_SOLENOID,OUTPUT);
   pinMode(PIN_HEATER,OUTPUT);
+  //Stepper driver pins
+  pinMode(nSTBY_nRESET_PIN, OUTPUT);
+  pinMode(nCS_PIN, OUTPUT);
+  pinMode(MOSI, OUTPUT);
+  pinMode(MISO, OUTPUT);
+  pinMode(SCK, OUTPUT);
+
+  
+  // Reset powerSTEP and set CS
+  digitalWrite(nSTBY_nRESET_PIN, HIGH);
+  digitalWrite(nSTBY_nRESET_PIN, LOW);
+  digitalWrite(nSTBY_nRESET_PIN, HIGH);
+  digitalWrite(nCS_PIN, HIGH);
+
+  // Start SPI
+  SPI.begin();
+  SPI.setDataMode(SPI_MODE3);
+
+  // Configure powerSTEP
+  driver.SPIPortConnect(&SPI); // give library the SPI port
+  
+  driver.configSyncPin(BUSY_PIN, 0); // use SYNC/nBUSY pin as nBUSY, 
+                                     // thus syncSteps (2nd paramater) does nothing
+                                     
+  driver.configStepMode(STEP_FS_128); // 1/128 microstepping, full steps = STEP_FS,
+                                // options: 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/128
+                                
+  driver.setMaxSpeed(1000); // max speed in units of full steps/s 
+  driver.setFullSpeed(2000); // full steps/s threshold for disabling microstepping
+  driver.setAcc(2000); // full steps/s^2 acceleration
+  driver.setDec(2000); // full steps/s^2 deceleration
+  
+  driver.setSlewRate(SR_520V_us); // faster may give more torque (but also EM noise),
+                                  // options are: 114, 220, 400, 520, 790, 980(V/us)
+                                  
+  driver.setOCThreshold(8); // over-current threshold for the 2.8A NEMA23 motor
+                            // used in testing. If your motor stops working for
+                            // no apparent reason, it's probably this. Start low
+                            // and increase until it doesn't trip, then maybe
+                            // add one to avoid misfires. Can prevent catastrophic
+                            // failures caused by shorts
+  driver.setOCShutdown(OC_SD_ENABLE); // shutdown motor bridge on over-current event
+                                      // to protect against permanant damage
+  
+  driver.setPWMFreq(PWM_DIV_1, PWM_MUL_0_75); // 16MHz*0.75/(512*1) = 23.4375kHz 
+                            // power is supplied to stepper phases as a sin wave,  
+                            // frequency is set by two PWM modulators,
+                            // Fpwm = Fosc*m/(512*N), N and m are set by DIV and MUL,
+                            // options: DIV: 1, 2, 3, 4, 5, 6, 7, 
+                            // MUL: 0.625, 0.75, 0.875, 1, 1.25, 1.5, 1.75, 2
+                            
+  driver.setVoltageComp(VS_COMP_DISABLE); // no compensation for variation in Vs as
+                                          // ADC voltage divider is not populated
+                                          
+  driver.setSwitchMode(SW_USER); // switch doesn't trigger stop, status can be read.
+                                 // SW_HARD_STOP: TP1 causes hard stop on connection 
+                                 // to GND, you get stuck on switch after homing
+                                      
+  driver.setOscMode(INT_16MHZ); // 16MHz internal oscillator as clock source
+
+  // KVAL registers set the power to the motor by adjusting the PWM duty cycle,
+  // use a value between 0-255 where 0 = no power, 255 = full power.
+  // Start low and monitor the motor temperature until you find a safe balance
+  // between power and temperature. Only use what you need
+  driver.setRunKVAL(60); //2.8V in voltage mode for 2A max on 1.4ohm coils
+  driver.setAccKVAL(60);
+  driver.setDecKVAL(60);
+  driver.setHoldKVAL(32);
+
+  driver.setParam(ALARM_EN, 0x8F); // disable ADC UVLO (divider not populated),
+                                   // disable stall detection (not configured),
+                                   // disable switch (not using as hard stop)
+
+  driver.getStatus(); // clears error flags
+
+  //home the actuator
+  driver.move(REV, STARTSTROKE); // move into the stop
+  while(driver.busyCheck()); // wait fo the move to finish
+  driver.resetPos(); //establish home
 
   //Initialize PID
   Input = analogRead(PIN_PRES);
   Setpoint = PEEP;
   //turn the PID on
   myPID.SetMode(AUTOMATIC);
-  pinMode(PIN_SOLENOID, OUTPUT); 
+
 }
 
 void loop() {
@@ -135,6 +234,7 @@ void loop() {
       cyclecounter++;
       //set command
       Setpoint = PIP;
+      analogWrite(PIN_BLOWER, BLOWER_PIP); //write output to blower
       digitalWrite(PIN_SOLENOID,1);
       analogWrite(PIN_BUZZER, 10);
       //update state
@@ -148,6 +248,7 @@ void loop() {
       cyclecounter++;
       //set command
       Setpoint = PEEP;
+      analogWrite(PIN_BLOWER, BLOWER_PEEP); //write output to blower
       digitalWrite(PIN_SOLENOID,1);
       analogWrite(PIN_BUZZER, 0);
       //update state
@@ -172,14 +273,14 @@ void loop() {
   //Update PID Loop
   Input = sensorValue;
   myPID.Compute(); // compute PID command
-  analogWrite(PIN_BLOWER, Output); //write output to blower
+  driver.goTo(map(Output,0,255,CLOSEDPOS,OPENPOS));
   now = (unsigned int)millis();
   //Output serial data in Cypress Bridge Control Panel format
   //Serial.print("C"); //output to monitor
   //Serial.write(now>>8);
   //Serial.write(now&0xff);
-  //Serial.write(int(map(Setpoint,0,255,0,1023))>>8); //output to monitor
-  //Serial.write(int(map(Setpoint,0,255,0,1023))&0xff); //output to monitor
+  //Serial.write(int(Setpoint)>>8); //output to monitor
+  //Serial.write(int(Setpoint)&0xff); //output to monitor
   //Serial.write(int(sensorValue)>>8); //output to monitor
   //Serial.write(int(sensorValue)&0xff); //output to monitor
   //Serial.write(int(flowValueINH)>>8); //output to monitor
