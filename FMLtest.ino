@@ -86,9 +86,9 @@
 #define BLOWER_LOW 66
 
 //state machine variables
-#define INSPIRE_TIME 400
-#define PIP 350 //  (10bit scaling)
-#define EXPIRE_TIME 400
+#define INSPIRE_TIME 150
+#define PIP 907 //35cm //606 //20cm //  (10bit scaling)
+#define EXPIRE_TIME 150
 #define PEEP 245 // (10bit scaling)
 //not implemented yet
 #define AC 0
@@ -96,8 +96,8 @@
 #define IE 0
 
 //experimental: blower feed forward
-#define BLOWER_PIP 220 //blower speed at PIP
-#define BLOWER_PEEP 220 //blower speed at PEEP
+#define BLOWER_PIP 250 //blower speed at PIP
+#define BLOWER_PEEP 250 //blower speed at PEEP
 
 //Define Variables we'll be connecting to
 double Setpoint, Input, Output;
