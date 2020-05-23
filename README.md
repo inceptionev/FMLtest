@@ -6,7 +6,8 @@ Simple test code for Edwin's STM32 ventilator setup
  * Note: this is personal testing code for validating hardware and is not intended to be supported.  (i.e. proceeed at your own risk)
  * Written for use on Ventilator Mainboard PCB Rev 1.0, running STM32 on STM32duino with a single powerSTEP01 stepper driver.
  
- * The PCB design itself is fully-suported, repository including quick start guide and programming instructions here: https://github.com/inceptionev/pcbreathe-bringup
+ * The PCB design itself is fully-suported, repository including quick start guide, list of dependencies, and programming instructions here: https://github.com/inceptionev/pcbreathe-bringup
+     * Note: you will NEED the dependencies listed in the documentation above to run this code.  Go there first if you are programming this board for the first time using this test code.
  * For the main ventilator code, for use on this PCB, see https://github.com/RespiraWorks/VentilatorSoftware.
  * For semi-supported test code for exercising functions on the PCB, see https://github.com/inceptionev/pcbreathe-bringup
 
