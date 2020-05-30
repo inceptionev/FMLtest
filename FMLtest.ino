@@ -90,9 +90,9 @@
 #define BLOWER_LOW 0 //set 0 blower setting while testing O2 only control
 
 //state machine variables
-#define INSPIRE_TIME 150
+#define INSPIRE_TIME 200
 #define PIP 907 //35cm //606 //20cm //  (10bit scaling)
-#define EXPIRE_TIME 150
+#define EXPIRE_TIME 200
 #define PEEP 245 // (10bit scaling)
 //not implemented yet
 #define AC 0
@@ -105,7 +105,7 @@
 
 //experimental: exhale valve feed forward positions
 #define EXH_PIP 6500
-#define EXH_PEEP 5250
+#define EXH_PEEP 4750
 
 //experimental: oxygen mixing 0 (no additional oxygen) to 1 (only oxygen)
 #define OXYMIX 1
@@ -114,12 +114,13 @@
 double Setpoint, Input, Output;
 
 //Specify the links and initial tuning parameters
-double ku = 0.8;  //maximum P gain in P-only mode that generates a stable oscillation
-double tu = 0.186; //oscillation period of the above
+//double ku = 0.8;  //maximum P gain in P-only mode that generates a stable oscillation
+//double tu = 0.186; //oscillation period of the above
 //double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0; //calculates gains using ziegler-nichols method of PI control
 //double Kp = ku/5, Ki = 2*ku/tu/5, Kd = ku*tu/15; //no overshoot rule
-double Kp=0.13, Ki=0.7, Kd=0; //base values - this kinda worked slow but stable
+//double Kp=0.13, Ki=0.7, Kd=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
 //double Kp=0.8, Ki=0, Kd=0;
+double Kp=0.1, Ki=0.1, Kd=0;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 //Define Variables we'll be connecting to
