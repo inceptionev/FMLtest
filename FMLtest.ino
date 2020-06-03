@@ -86,61 +86,58 @@
 #define PSOL_CLOSEDPOS 1000
 #define PSOL_OPENPOS 1500
 
-#define BLOWER_HIGH 0 
-#define BLOWER_LOW 0 //set 0 blower setting while testing O2 only control
+#define BLOWER_HIGH 255 
+#define BLOWER_LOW 255 //blower always full throttle in pinch valve control mode (at least for now)
 
-//state machine variables
-#define INSPIRE_TIME 200
-#define PIP 907 //35cm //606 //20cm //  (10bit scaling)
-#define EXPIRE_TIME 200
-#define PEEP 245 // (10bit scaling)
+//state machine settings
+#define CONTROL_PERIOD 10
+#define INSPIRE_TIME 2000 //in ms
+#define PIP 907 // 907 = 35cm  (10bit scaling)
+#define EXPIRE_TIME 2000 //in ms
+#define PEEP 305 // 305 = 5cm(10bit scaling)
 //not implemented yet
 #define AC 0
 #define RR 0
 #define IE 0
 
 //experimental: blower feed forward
-#define BLOWER_PIP 0 //blower speed at PIP
-#define BLOWER_PEEP 0 //blower speed at PEEP
+#define BLOWER_PIP 255 //blower speed at PIP
+#define BLOWER_PEEP 255 //blower speed at PEEP
 
 //experimental: exhale valve feed forward positions
 #define EXH_PIP 6500
 #define EXH_PEEP 4750
 
 //experimental: oxygen mixing 0 (no additional oxygen) to 1 (only oxygen)
-#define OXYMIX 1
+#define OXYMIX 0  //currently this is only tested for 0 (pure air) and 1 (pure oxygen) with oxygen inlet pressure 0.12Mpa
+
 
 //Define Variables we'll be connecting to
-double Setpoint, Input, Output;
-
-//Specify the links and initial tuning parameters
-//double ku = 0.8;  //maximum P gain in P-only mode that generates a stable oscillation
-//double tu = 0.186; //oscillation period of the above
-//double Kp = 0.45*ku, Ki = 0.54*ku/tu, Kd = 0; //calculates gains using ziegler-nichols method of PI control
-//double Kp = ku/5, Ki = 2*ku/tu/5, Kd = ku*tu/15; //no overshoot rule
-//double Kp=0.13, Ki=0.7, Kd=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
-//double Kp=0.8, Ki=0, Kd=0;
-double Kp=0.1, Ki=0.1, Kd=0;
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+double SetpointAIR, InputAIR, OutputAIR;
+double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
+PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
 
 //Define Variables we'll be connecting to
 double SetpointOXY, InputOXY, OutputOXY;
-double KpOXY=0.13, KiOXY=0, KdOXY=0;
+double KpOXY=0.005, KiOXY=0.03, KdOXY=0; //working values for pure O2 PSOL
 PID PID_OXY(&InputOXY, &OutputOXY, &SetpointOXY, KpOXY, KiOXY, KdOXY, DIRECT);
 
 // These constants won't change. They're used to give names to the pins used:
 const int analogOutPin = LED_BUILTIN; // Analog output pin that the LED is attached to
 
-int sensorValue = 0;        // value read from pressure sensor
-int outputValue = 0;        // value output to the PWM (analog out)
-int flowValueINH = 0;       // value read from inhale flow sensor
-int flowValueEXH = 0;       // value read from exhale flow sensor
-int vsense = 0;
+//Sensor variables
+uint16_t pressureValue = 0;        // value read from pressure sensor
+uint16_t outputValue = 0;        // value output to the PWM (analog out)
+uint16_t flowValueINH = 0;       // value read from inhale flow sensor
+uint16_t flowValueEXH = 0;       // value read from exhale flow sensor
+uint16_t vsense = 0;
 int CommandEXH = OPENPOS;
 
+//State machine variables
 unsigned int cyclecounter = 0; //used to time the cycles in the state machine
 unsigned int state = 0; //state machine state
 unsigned int now = 0; // carry the time
+double Setpoint = 0;
 
 //instantiate stepper driver
 //instantiate stepper driver
@@ -186,6 +183,133 @@ void setup() {
   SPI.begin();
   SPI.setDataMode(SPI_MODE3);
 
+  //configure all the driver settings for the stepper drivers.
+  configureStepperDrives();  
+
+  //home the actuator
+  driverEXH.move(REV, STARTSTROKE);
+  driverINH.move(REV, STARTSTROKE); // move into the stop
+  //while(driverINH.busyCheck()); // wait fo the move to finish - replaced this with a wait so it becomes non-blocking
+  delay(2000);
+
+  //Setup display (i2c test)
+  Wire.begin();
+  Wire.beginTransmission(0x70); //address the i2c switch
+  Wire.write(7); //select i2c port, base address 4, cycle thru 5-7
+  Wire.endTransmission(); //send and stop
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.setTextSize(2);      // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setCursor(0, 0);     // Start at top-left corner
+  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+  //Initialize PID
+  pressureValue = analogRead(PIN_PRES);
+  InputAIR = pressureValue;
+  InputOXY = pressureValue;
+  Setpoint = PEEP;
+  SetpointAIR = Setpoint;
+  SetpointOXY = Setpoint;
+  //turn the PID on
+  PID_AIR.SetMode(AUTOMATIC);
+  PID_OXY.SetMode(AUTOMATIC);
+
+}
+
+void loop() {
+
+  //respiration cycle state machine
+  //times states and sets setpoint
+  switch(state) {
+    case 0:
+      //set command
+      Setpoint = PIP;
+      CommandEXH = EXH_PIP;
+      analogWrite(PIN_BLOWER, BLOWER_PIP); //write output to blower
+      analogWrite(PIN_BUZZER, 3);
+      //display once at the start of the cycle
+      //update state
+      cyclecounter++;
+      if (cyclecounter > int(INSPIRE_TIME/CONTROL_PERIOD)) {
+        cyclecounter = 0;
+        state = 1;
+      }
+      break;
+            
+    case 1:
+      //set command
+      Setpoint = PEEP;
+      CommandEXH = EXH_PEEP;
+      analogWrite(PIN_BLOWER, BLOWER_PEEP); //write output to blower
+      analogWrite(PIN_BUZZER, 0);
+      //display once at the start of the cycle
+      //update state
+      cyclecounter++;
+      if (cyclecounter > int(EXPIRE_TIME/CONTROL_PERIOD)) {
+        cyclecounter = 0;
+        state = 0;
+      }
+      break;
+
+    default:
+      state = 0;
+      break;
+  }
+
+  //CYCLE ACTION BLOCK
+  //read sensors
+  pressureValue = analogRead(PIN_PRES); //read sensor
+  flowValueINH = analogRead(PIN_INH);
+  flowValueEXH = analogRead(PIN_EXH);
+  vsense = analogRead(PIN_VSENSE);
+
+  //Update PID Loop
+  SetpointAIR = Setpoint;
+  SetpointOXY = Setpoint;
+  InputAIR = pressureValue;
+  InputOXY = pressureValue;
+  PID_AIR.Compute(); // compute air (blower + pinch valve) PID command
+  PID_OXY.Compute(); // compute oxygen (PSOL) PID command
+  analogWrite(PIN_SOLENOID, map(int(OXYMIX*OutputOXY),0,255,PSOL_CLOSEDPOS,PSOL_OPENPOS));
+  driverINH.goTo(map(int((1-OXYMIX)*OutputAIR),0,255,CLOSEDPOS,OPENPOS));
+  driverEXH.goTo(CommandEXH);
+  
+  now = (unsigned int)millis();
+  //Output serial data in Cypress Bridge Control Panel format
+  Serial.print("C"); //output to monitor
+  Serial.write(now>>8);
+  Serial.write(now&0xff);
+  Serial.write(int(Setpoint)>>8); //output to monitor
+  Serial.write(int(Setpoint)&0xff); //output to monitor
+  Serial.write(int(OutputAIR)>>8);
+  Serial.write(int(OutputAIR)&0xff);
+  Serial.write(int(OutputOXY)>>8);
+  Serial.write(int(OutputOXY)&0xff);
+  Serial.write(int(pressureValue)>>8); //output to monitor
+  Serial.write(int(pressureValue)&0xff); //output to monitor
+  Serial.write(int(flowValueINH)>>8); //output to monitor
+  Serial.write(int(flowValueINH)&0xff); //output to monitor
+  Serial.write(int(flowValueEXH)>>8); //output to monitor
+  Serial.write(int(flowValueEXH)&0xff); //output to monitor
+
+  //Output serial data in Arduino Plotter format
+  /*Serial.print(Setpoint);
+  Serial.print("\t");
+  Serial.print(Output);
+  Serial.print("\t");
+  Serial.print(pressureValue);
+  Serial.print("\t");
+  Serial.print(flowValueINH);
+  Serial.print("\t");
+  Serial.print(flowValueEXH);
+  Serial.print("\t");
+  Serial.println(vsense);
+  */
+  delay(CONTROL_PERIOD);  //delay
+
+}
+
+void configureStepperDrives() {
   // Configure powerSTEP
   driverEXH.SPIPortConnect(&SPI); // give library the SPI port
   driverINH.SPIPortConnect(&SPI); // give library the SPI port
@@ -261,120 +385,5 @@ void setup() {
                                    // disable switch (not using as hard stop)
   driverEXH.getStatus();
   driverINH.getStatus(); // clears error flags
-
-  //home the actuator
-  driverEXH.move(REV, STARTSTROKE);
-  driverINH.move(REV, STARTSTROKE); // move into the stop
-  //while(driverINH.busyCheck()); // wait fo the move to finish - replaced this with a wait so it becomes non-blocking
-  delay(2000);
-
-  //Setup display (i2c test)
-  Wire.begin();
-  Wire.beginTransmission(0x70); //address the i2c switch
-  Wire.write(7); //select i2c port, base address 4, cycle thru 5-7
-  Wire.endTransmission(); //send and stop
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  display.setTextSize(2);      // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(0, 0);     // Start at top-left corner
-  display.cp437(true);         // Use full 256 char 'Code Page 437' font
-
-  //Initialize PID
-  Input = analogRead(PIN_PRES);
-  InputOXY = Input;
-  Setpoint = PEEP;
-  SetpointOXY = Setpoint;
-  //turn the PID on
-  myPID.SetMode(AUTOMATIC);
-  PID_OXY.SetMode(AUTOMATIC);
-
-}
-
-void loop() {
-
-  //respiration cycle state machine
-  //times states and sets setpoint
-  switch(state) {
-    case 0:
-      //set command
-      Setpoint = PIP;
-      CommandEXH = EXH_PIP;
-      analogWrite(PIN_BLOWER, BLOWER_PIP); //write output to blower
-      analogWrite(PIN_BUZZER, 3);
-      //display once at the start of the cycle
-      //update state
-      cyclecounter++;
-      if (cyclecounter > INSPIRE_TIME) {
-        cyclecounter = 0;
-        state = 1;
-      }
-      break;
-            
-    case 1:
-      //set command
-      Setpoint = PEEP;
-      CommandEXH = EXH_PEEP;
-      analogWrite(PIN_BLOWER, BLOWER_PEEP); //write output to blower
-      analogWrite(PIN_BUZZER, 0);
-      //display once at the start of the cycle
-      //update state
-      cyclecounter++;
-      if (cyclecounter > EXPIRE_TIME) {
-        cyclecounter = 0;
-        state = 0;
-      }
-      break;
-
-    default:
-      state = 0;
-      break;
-  }
-
-  //CYCLE ACTION BLOCK
-  //read sensors
-  sensorValue = analogRead(PIN_PRES); //read sensor
-  flowValueINH = analogRead(PIN_INH);
-  flowValueEXH = analogRead(PIN_EXH);
-  vsense = analogRead(PIN_VSENSE);
-
-  //Update PID Loop
-  Input = sensorValue;
-  InputOXY = Input;
-  myPID.Compute(); // compute PID command
-  PID_OXY.Compute(); //not used yet
-  analogWrite(PIN_SOLENOID, map(int(OXYMIX*Output),0,255,PSOL_CLOSEDPOS,PSOL_OPENPOS));
-  driverINH.goTo(map(int((1-OXYMIX)*Output),0,255,CLOSEDPOS,OPENPOS));
-  driverEXH.goTo(CommandEXH);
   
-  now = (unsigned int)millis();
-  //Output serial data in Cypress Bridge Control Panel format
-  Serial.print("C"); //output to monitor
-  Serial.write(now>>8);
-  Serial.write(now&0xff);
-  Serial.write(int(Setpoint)>>8); //output to monitor
-  Serial.write(int(Setpoint)&0xff); //output to monitor
-  Serial.write(int(Output)>>8);
-  Serial.write(int(Output)&0xff);
-  Serial.write(int(sensorValue)>>8); //output to monitor
-  Serial.write(int(sensorValue)&0xff); //output to monitor
-  Serial.write(int(flowValueINH)>>8); //output to monitor
-  Serial.write(int(flowValueINH)&0xff); //output to monitor
-  Serial.write(int(flowValueEXH)>>8); //output to monitor
-  Serial.write(int(flowValueEXH)&0xff); //output to monitor
-
-  //Output serial data in Arduino Plotter format
-  /*Serial.print(Setpoint);
-  Serial.print("\t");
-  Serial.print(Output);
-  Serial.print("\t");
-  Serial.print(sensorValue);
-  Serial.print("\t");
-  Serial.print(flowValueINH);
-  Serial.print("\t");
-  Serial.print(flowValueEXH);
-  Serial.print("\t");
-  Serial.println(vsense);
-  */
-  delay(10);  //delay
-
 }
