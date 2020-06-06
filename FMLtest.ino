@@ -102,7 +102,7 @@
 
 //experimental: blower feed forward
 #define BLOWER_PIP 255 //blower speed at PIP
-#define BLOWER_PEEP 255 //blower speed at PEEP
+#define BLOWER_PEEP 255//blower speed at PEEP
 
 //experimental: exhale valve feed forward positions
 #define EXH_PIP 6500
