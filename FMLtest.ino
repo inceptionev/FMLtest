@@ -191,6 +191,8 @@ void setup() {
   driverINH.move(REV, STARTSTROKE); // move into the stop
   //while(driverINH.busyCheck()); // wait fo the move to finish - replaced this with a wait so it becomes non-blocking
   delay(2000);
+  driverEXH.resetPos();
+  driverINH.resetPos();
 
   //Setup display (i2c test)
   Wire.begin();
