@@ -91,9 +91,9 @@
 
 //state machine settings
 #define CONTROL_PERIOD 10
-#define INSPIRE_TIME 1500 //in ms
+#define INSPIRE_TIME 4000 //in ms
 #define PIP 907 // 907 = 35cm  (10bit scaling)
-#define EXPIRE_TIME 1500 //in ms
+#define EXPIRE_TIME 4000 //in ms
 #define PEEP 305 // 305 = 5cm(10bit scaling)
 //not implemented yet
 #define AC 0
@@ -115,10 +115,12 @@
 //Define Variables we'll be connecting to
 double SetpointAIR, InputAIR, OutputAIR;
 //double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
-double KuAIR = 1.7, TuAIR = 0.23; //more aggressive
-//double KuAIR = 1.3, TuAIR = 0.2; //less aggressive
+//double KuAIR = 1.7, TuAIR = 0.23; //more aggressive - shittylung values
+double KuAIR = 0.3, TuAIR = 0.2; //more aggressive - quicklung values
+//double KuAIR = 0.2, TuAIR = 0.2; //less aggressive - quicklung values
+//double KuAIR = 1.3, TuAIR = 0.2; //less aggressive - shittylung values
 double KpAIR = 0.45*KuAIR, KiAIR = 0.54*KuAIR/TuAIR, KdAIR = 0; //Ziegler-Nichols PI
-//double KpAIR=1.3, KiAIR=0, KdAIR=0; //for getting Ku and Tu
+//double KpAIR=0.2, KiAIR=0, KdAIR=0; //for getting Ku and Tu
 PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
 
 //Define Variables we'll be connecting to
