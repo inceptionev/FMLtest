@@ -120,6 +120,7 @@ double KuAIR = 0.3, TuAIR = 0.2; //more aggressive - quicklung values
 //double KuAIR = 0.2, TuAIR = 0.2; //less aggressive - quicklung values
 //double KuAIR = 1.3, TuAIR = 0.2; //less aggressive - shittylung values
 double KpAIR = 0.45*KuAIR, KiAIR = 0.54*KuAIR/TuAIR, KdAIR = 0; //Ziegler-Nichols PI
+//double KpAIR = 0.2*KuAIR, KiAIR = 0.4*KuAIR/TuAIR, KdAIR = KuAIR*TuAIR/15; // Ziegler-Nichols PID no overshoot
 //double KpAIR=0.2, KiAIR=0, KdAIR=0; //for getting Ku and Tu
 PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
 
