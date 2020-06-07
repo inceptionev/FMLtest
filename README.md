@@ -19,7 +19,7 @@ Outputs can be plotted and exported with Cypress PSoC Programmer (Bridge Control
 
     ```RX8 [h=43] @1Key1 @0Key1 @1Key2 @0Key2 @1Key3 @0Key3 @1Key4 @0Key4 @1Key5 @0Key5 @1Key6 @0Key6 @1Key7 @0Key7```
 * In order, each of these outputs is: Time(ms), Pressure Setpoint, AIR Valve Command, OXY Valve Command, Patient Pressure, Inhale dP, Exhale dP
-* The MPXV5004DPs come out as 10bit values and the scaling is ```kPa = 5*Value/1023-1```.  The AMS5915 is 14bit and the scaling is kPa = ```10*(Value-1638)/(14745-1638)```.
+* The MPXV5004DPs come out as 14bit values and the scaling is ```kPa = 5*Value/16383-1```.  The AMS5915 is 14bit and the scaling is kPa = ```10*(Value-1638)/(14745-1638)```.
 * The MPXV5004DP sensors are assigned to Pressure, Inhale, and Exhale on this board, but of course you can connect them to anything you want to measure
 * The hypodermic needles can be useful for picking off pressures anywhere you have rubber tubing.
 * Be careful not to poke yourself.
