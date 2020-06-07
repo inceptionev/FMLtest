@@ -92,10 +92,13 @@
 //state machine settings
 #define CONTROL_PERIOD 10
 #define INSPIRE_TIME 4000 //in ms
-#define PIP 907 // 907 = 35cm  (10bit scaling)
+//#define PIP 907 // 907 = 35cm  (10bit scaling)
+#define PIP 14523 // 14523 = 35cm (14bit scaling)
 //#define PIP 305 // set all to PEEP pressure to capture inspire effort
 #define EXPIRE_TIME 4000 //in ms
-#define PEEP 305 // 305 = 5cm(10bit scaling)
+//#define PEEP 305 // 305 = 5cm(10bit scaling)
+//#define PEEP 8096 //8096 = 15cm PEEP (14bit scaling)
+#define PEEP 4883
 //not implemented yet
 #define AC 0
 #define RR 0
@@ -117,7 +120,7 @@
 double SetpointAIR, InputAIR, OutputAIR;
 //double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
 //double KuAIR = 1.7, TuAIR = 0.23; //more aggressive - shittylung values
-double KuAIR = 0.3, TuAIR = 0.2; //more aggressive - quicklung values
+double KuAIR = 0.01875, TuAIR = 0.2; //more aggressive - quicklung values
 //double KuAIR = 0.2, TuAIR = 0.2; //less aggressive - quicklung values
 //double KuAIR = 1.3, TuAIR = 0.2; //less aggressive - shittylung values
 double KpAIR = 0.45*KuAIR, KiAIR = 0.54*KuAIR/TuAIR, KdAIR = 0; //Ziegler-Nichols PI
@@ -179,6 +182,8 @@ void setup() {
   pinMode(MOSI, OUTPUT);
   pinMode(MISO, OUTPUT);
   pinMode(SCK, OUTPUT);
+
+  analogReadResolution(14);
 
   
   // Reset powerSTEP and set CS
@@ -257,7 +262,7 @@ void loop() {
       cyclecounter++;
       if (cyclecounter > int(EXPIRE_TIME/CONTROL_PERIOD)) {
         cyclecounter = 0;
-        state = 1;
+        state = 0;
       }
       break;
 
