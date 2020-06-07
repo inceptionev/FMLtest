@@ -93,6 +93,7 @@
 #define CONTROL_PERIOD 10
 #define INSPIRE_TIME 4000 //in ms
 #define PIP 907 // 907 = 35cm  (10bit scaling)
+//#define PIP 305 // set all to PEEP pressure to capture inspire effort
 #define EXPIRE_TIME 4000 //in ms
 #define PEEP 305 // 305 = 5cm(10bit scaling)
 //not implemented yet
@@ -121,7 +122,7 @@ double KuAIR = 0.3, TuAIR = 0.2; //more aggressive - quicklung values
 //double KuAIR = 1.3, TuAIR = 0.2; //less aggressive - shittylung values
 double KpAIR = 0.45*KuAIR, KiAIR = 0.54*KuAIR/TuAIR, KdAIR = 0; //Ziegler-Nichols PI
 //double KpAIR = 0.2*KuAIR, KiAIR = 0.4*KuAIR/TuAIR, KdAIR = KuAIR*TuAIR/15; // Ziegler-Nichols PID no overshoot
-//double KpAIR=0.2, KiAIR=0, KdAIR=0; //for getting Ku and Tu
+//double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //for getting Ku and Tu
 PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
 
 //Define Variables we'll be connecting to
@@ -256,7 +257,7 @@ void loop() {
       cyclecounter++;
       if (cyclecounter > int(EXPIRE_TIME/CONTROL_PERIOD)) {
         cyclecounter = 0;
-        state = 0;
+        state = 1;
       }
       break;
 
