@@ -118,20 +118,25 @@
 
 //Define Variables we'll be connecting to
 double SetpointAIR, InputAIR, OutputAIR;
-//double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
-//double KuAIR = 1.7, TuAIR = 0.23; //more aggressive - shittylung values
-double KuAIR = 0.01875, TuAIR = 0.2; //more aggressive - quicklung values
-//double KuAIR = 0.2, TuAIR = 0.2; //less aggressive - quicklung values
-//double KuAIR = 1.3, TuAIR = 0.2; //less aggressive - shittylung values
+double KuAIR = 0.01875, TuAIR = 0.2; //more aggressive - quicklung values - 14bit values
 double KpAIR = 0.45*KuAIR, KiAIR = 0.54*KuAIR/TuAIR, KdAIR = 0; //Ziegler-Nichols PI
+PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
+
+//THESE ARE OTHER VALUES THAT WERE TRIED
+//double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //10bit base values - this kinda worked slow but stable THESE ARE THE VALUES THAT WORKED FOR BLOWER PINCH ONLY
+//double KuAIR = 1.7, TuAIR = 0.23; //10bit more aggressive - shittylung values
+//double KuAIR = 0.2, TuAIR = 0.2; //10bit less aggressive - quicklung values
+//double KuAIR = 1.3, TuAIR = 0.2; //10bit less aggressive - shittylung values
 //double KpAIR = 0.2*KuAIR, KiAIR = 0.4*KuAIR/TuAIR, KdAIR = KuAIR*TuAIR/15; // Ziegler-Nichols PID no overshoot
 //double KpAIR=0.13, KiAIR=0.7, KdAIR=0; //for getting Ku and Tu
-PID PID_AIR(&InputAIR, &OutputAIR, &SetpointAIR, KpAIR, KiAIR, KdAIR, DIRECT);
 
 //Define Variables we'll be connecting to
 double SetpointOXY, InputOXY, OutputOXY;
-double KpOXY=0.005, KiOXY=0.03, KdOXY=0; //working values for pure O2 PSOL
+double KpOXY=0.0003125, KiOXY=0.001875, KdOXY=0; //14bit working values for pure O2 PSOL on shittylung
 PID PID_OXY(&InputOXY, &OutputOXY, &SetpointOXY, KpOXY, KiOXY, KdOXY, DIRECT);
+
+//THESE ARE OTHER VALUES THAT WERE TRIED
+//double KpOXY=0.005, KiOXY=0.03, KdOXY=0; //10bit working values for pure O2 PSOL on shittylung
 
 // These constants won't change. They're used to give names to the pins used:
 const int analogOutPin = LED_BUILTIN; // Analog output pin that the LED is attached to
