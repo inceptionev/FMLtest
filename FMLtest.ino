@@ -115,6 +115,12 @@
 //experimental: oxygen mixing 0 (no additional oxygen) to 1 (only oxygen)
 #define OXYMIX 0  //currently this is only tested for 0 (pure air) and 1 (pure oxygen) with oxygen inlet pressure 0.12Mpa
 
+//experimental: inspiratory effort detection
+#define BREATHDETECT_START 200 //ms after beginning of expiratory phase to begin the breath detection window.  BREATHDETECT_START should be greater than BREATHDETECT_AVERAGING*CONTROL_PERIOD to make sure the averaging buffer has been filled
+#define BREATHDETECT_AVERAGING 10 //number of elements in the breath detection averaging buffer.  note that longer buffers will result in more detection latency.
+#define BREATHDETECT_FLOW_MIN 3839 // FLOW dP average must be above this value to trigger a breath
+int flowWindow[BREATHDETECT_AVERAGING];
+int flowAverage = 0;
 
 //Define Variables we'll be connecting to
 double SetpointAIR, InputAIR, OutputAIR;
@@ -234,6 +240,11 @@ void setup() {
   PID_AIR.SetMode(AUTOMATIC);
   PID_OXY.SetMode(AUTOMATIC);
 
+  //initialize flow averaging
+  for(int k=0;k<BREATHDETECT_AVERAGING-1;k++){
+    flowWindow[k]=0;
+  }
+
 }
 
 void loop() {
@@ -251,6 +262,9 @@ void loop() {
       //update state
       cyclecounter++;
       if (cyclecounter > int(INSPIRE_TIME/CONTROL_PERIOD)) {
+        for(int k=0;k<BREATHDETECT_AVERAGING-1;k++){
+          flowWindow[k]=0;
+        }
         cyclecounter = 0;
         state = 1;
       }
@@ -283,6 +297,14 @@ void loop() {
   flowValueEXH = analogRead(PIN_EXH);
   vsense = analogRead(PIN_VSENSE);
 
+  //update flow window average
+  flowWindow[cyclecounter%BREATHDETECT_AVERAGING] = flowValueINH - flowValueEXH;
+  flowAverage = 0;
+  for(int k=0;k<BREATHDETECT_AVERAGING;k++){
+    flowAverage += flowWindow[k];
+  }
+  flowAverage = flowAverage / BREATHDETECT_AVERAGING;
+  
   //Update PID Loop
   SetpointAIR = Setpoint;
   SetpointOXY = Setpoint;
